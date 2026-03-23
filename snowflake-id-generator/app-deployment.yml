@@ -7,7 +7,7 @@ metadata:
   annotations:
     kubernetes.io/change-cause: "Deploy snowflake-app:v1.0.0"
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: snowflake-app
@@ -48,11 +48,30 @@ spec:
                 configMapKeyRef:
                   name: snowflake-config
                   key: SNOWFLAKE_SETTINGS_DATACENTER_ID
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-0.postgres:5432/snowflake_db"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "update"
+            - name: SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT
+              value: "org.hibernate.dialect.PostgreSQLDialect"
           command: ["sh", "-c", "export SNOWFLAKE_SETTINGS_WORKED_ID=$(cat /config/worker-id) && java -jar /app/app.jar"]
           resources:
             requests:
               cpu: "500m"
               memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "500Mi"
           ports:
             - containerPort: 8080
               name: http
