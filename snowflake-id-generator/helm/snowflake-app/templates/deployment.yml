@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    {{- include "snowflake.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/change-cause: "Helm upgrade {{ .Chart.AppVersion }}"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "snowflake.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  template:
+    metadata:
+      labels:
+        {{- include "snowflake.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+        - name: generate-worker-id
+          image: busybox:1.36
+          command: ["sh", "-c", "echo $(shuf -i 1-31 -n 1) > /config/worker-id"]
+          volumeMounts:
+            - name: worker-id-volume
+              mountPath: /config
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SPRING_APPLICATION_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: snowflake-config
+                  key: SPRING_APPLICATION_NAME
+            - name: SNOWFLAKE_SETTINGS_STARTING_EPOCH
+              valueFrom:
+                configMapKeyRef:
+                  name: snowflake-config
+                  key: SNOWFLAKE_SETTINGS_STARTING_EPOCH
+            - name: SNOWFLAKE_SETTINGS_DATACENTER_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: snowflake-config
+                  key: SNOWFLAKE_SETTINGS_DATACENTER_ID
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-0.postgres:5432/{{ .Values.postgres.database }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: {{ .Values.datasource.ddlAuto | quote }}
+            - name: SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT
+              value: {{ .Values.datasource.hibernateDialect | quote }}
+          command: ["sh", "-c", "export SNOWFLAKE_SETTINGS_WORKED_ID=$(cat /config/worker-id) && java -jar /app/app.jar"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+              name: http
+              protocol: TCP
+          volumeMounts:
+            - name: worker-id-volume
+              mountPath: /config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /management/health/livenessState
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /management/health/readinessState
+              port: {{ .Values.service.targetPort }}
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+      volumes:
+        - name: worker-id-volume
+          emptyDir: {}
