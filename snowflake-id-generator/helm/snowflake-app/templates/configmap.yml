@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowflake-config
+  labels:
+    {{- include "snowflake.labels" . | nindent 4 }}
+data:
+  SPRING_APPLICATION_NAME: {{ .Values.config.springApplicationName | quote }}
+  SNOWFLAKE_SETTINGS_STARTING_EPOCH: {{ .Values.config.startingEpoch | quote }}
+  SNOWFLAKE_SETTINGS_DATACENTER_ID: {{ .Values.config.datacenterId | quote }}
